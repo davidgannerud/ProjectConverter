@@ -26,10 +26,16 @@ class UVPROJXProject(object):
         self.project['incs'] = self.root.Targets.Target.TargetOption.TargetArmAds.Cads.VariousControls.IncludePath.text.split(';')
         self.project['mems'] = self.root.Targets.Target.TargetOption.TargetCommonOption.Cpu
         self.project['defs'] = self.root.Targets.Target.TargetOption.TargetArmAds.Cads.VariousControls.Define.text.split(',')
-        self.project['srcs'] = []
+
+        # Files are collected per Keil uVision <Group> so the generated
+        # CMakeLists.txt can mirror that organization instead of dumping
+        # everything into one flat list.
+        self.project['groups'] = []
 
         for element in self.root.Targets.Target.Groups.getchildren():
-            print('GroupName: ' + element.GroupName.text)
+            groupName = str(element.GroupName.text)
+            print('GroupName: ' + groupName)
+            files = []
             if hasattr(element, 'Files'):
                 for file in element.Files.getchildren():
                     if not str(file.FilePath.text).endswith('.s'):
@@ -39,7 +45,8 @@ class UVPROJXProject(object):
                                 s = s.replace('/', '\\')
                             elif os.path.sep == '/':
                                 s = s.replace('\\', '/')
-                        self.project['srcs'].append(s.replace('..', self.path, 1))
+                        files.append(s.replace('..', self.path, 1))
+            self.project['groups'].append({'name': groupName, 'files': files})
 
         for i in range(0, len(self.project['incs'])):
             s = str(self.project['incs'][i])
@@ -51,13 +58,13 @@ class UVPROJXProject(object):
 
             self.project['incs'][i] = s.replace('..', self.path, 1)
 
-        self.project['files'] = []
-        i = 0
-
         if os.path.exists(self.path + '/Drivers/CMSIS/Device/ST/STM32F3xx/Source/Templates/gcc'):
+            asmFiles = []
             for entry in os.listdir(self.path + '/Drivers/CMSIS/Device/ST/STM32F3xx/Source/Templates/gcc'):
                 if entry.endswith('.S') or entry.endswith('.s'):
-                    self.project['files'].append(self.path + '/Drivers/CMSIS/Device/ST/STM32F3xx/Source/Templates/gcc/'+ entry)
+                    asmFiles.append(self.path + '/Drivers/CMSIS/Device/ST/STM32F3xx/Source/Templates/gcc/'+ entry)
+            if asmFiles:
+                self.project['groups'].append({'name': 'ASM (auto-detected)', 'files': asmFiles})
 
     def displaySummary(self):
         """ Display summary of parsed project settings
@@ -66,7 +73,8 @@ class UVPROJXProject(object):
         print('Project chip:' + self.project['chip'])
         print('Project includes: ' + ' '.join(self.project['incs']))
         print('Project defines: ' + ' '.join(self.project['defs']))
-        print('Project srcs: ' + ' '.join(self.project['srcs']))
+        allFiles = [f for group in self.project['groups'] for f in group['files']]
+        print('Project srcs: ' + ' '.join(allFiles))
         print('Project: ' + self.project['mems'])
 
     def getProject(self):
