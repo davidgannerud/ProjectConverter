@@ -41,23 +41,15 @@ class EWPProject(object):
         else:
             self.projDirExpr = '${CMAKE_CURRENT_SOURCE_DIR}/' + rel.replace(os.path.sep, '/')
 
-    def _selectConfiguration(self):
-        """ Return the <configuration> element matching self.configName,
-            falling back to the first configuration found if there is
-            no exact match.
-            @return lxml element for the selected configuration
+    def _allConfigurations(self):
+        """ Return all <configuration> elements in the project, in
+            document order.
+            @return List of lxml elements
         """
         configs = [c for c in self.root.getchildren() if c.tag == 'configuration']
-        for config in configs:
-            if str(config.name) == self.configName:
-                return config
-
-        if configs:
-            print('Configuration \'{}\' not found, using \'{}\' instead'.format(
-                self.configName, str(configs[0].name)))
-            return configs[0]
-
-        raise ValueError('No <configuration> found in project file')
+        if not configs:
+            raise ValueError('No <configuration> found in project file')
+        return configs
 
     def _resolvePath(self, value):
         """ Normalize an IAR path/state string into a portable, forward
@@ -85,7 +77,12 @@ class EWPProject(object):
         self.project['name'] = os.path.splitext(os.path.basename(self.xmlFile))[0]
         self.project['chip'] = ''
 
-        configuration = self._selectConfiguration()
+        # The build configuration passed via --config (default 'Debug')
+        # only selects which configuration CMAKE_BUILD_TYPE defaults to
+        # in the generated CMakeLists.txt; every configuration found in
+        # the project is parsed so Debug/Release defines can both be
+        # emitted, switched at CMake configure time.
+        self.project['default_config'] = self.configName
 
         # File/group entries are shared across configurations and live
         # at the root of the document, not nested under <configuration>.
@@ -101,28 +98,61 @@ class EWPProject(object):
             {'name': name, 'files': groups[name]} for name in groupsOrder
         ]
 
-        self.project['defs'] = []
         self.project['incs'] = []
         skippedIncs = []
 
-        for element in configuration.getchildren():
-            if element.tag == 'settings':
-                for e in element.data.getchildren():
-                    if e.tag == 'option':
-                        if e.name.text == 'OGChipSelectEditMenu':
-                            self.project['chip'] = str(e.state)
-                        elif e.name.text == 'CCDefines':
-                            for d in e.getchildren():
-                                if d.tag == 'state' and d.text != None:
-                                    self.project['defs'].append(d.text)
-                        elif e.name.text == 'CCIncludePath2':
-                            for d in e.getchildren():
-                                if d.tag == 'state' and d.text != None:
-                                    resolved = self._resolvePath(d.text)
-                                    if resolved is None:
-                                        skippedIncs.append(str(d.text))
-                                    elif resolved not in self.project['incs']:
-                                        self.project['incs'].append(resolved)
+        # Defines are collected per configuration (e.g. Debug vs.
+        # Release commonly differ, e.g. DEBUG/NDEBUG), then split into
+        # defines common to every configuration and defines unique to
+        # each one, so the generated CMakeLists.txt can apply the
+        # per-config ones conditionally on CMAKE_BUILD_TYPE.
+        definesByConfig = {}
+        configOrder = []
+
+        for configuration in self._allConfigurations():
+            configName = str(configuration.name)
+            configOrder.append(configName)
+            defs = []
+
+            for element in configuration.getchildren():
+                if element.tag == 'settings':
+                    for e in element.data.getchildren():
+                        if e.tag == 'option':
+                            if e.name.text == 'OGChipSelectEditMenu':
+                                if not self.project['chip']:
+                                    self.project['chip'] = str(e.state)
+                            elif e.name.text == 'CCDefines':
+                                for d in e.getchildren():
+                                    if d.tag == 'state' and d.text != None:
+                                        defs.append(d.text)
+                            elif e.name.text == 'CCIncludePath2':
+                                for d in e.getchildren():
+                                    if d.tag == 'state' and d.text != None:
+                                        resolved = self._resolvePath(d.text)
+                                        if resolved is None:
+                                            skippedIncs.append(str(d.text))
+                                        elif resolved not in self.project['incs']:
+                                            self.project['incs'].append(resolved)
+
+            definesByConfig[configName] = defs
+
+        # A define is "common" only if every configuration defines it;
+        # order follows the first configuration that declares it.
+        commonDefines = []
+        for defs in definesByConfig.values():
+            for d in defs:
+                if d not in commonDefines and all(d in other for other in definesByConfig.values()):
+                    commonDefines.append(d)
+
+        self.project['defines_common'] = commonDefines
+        self.project['defines_by_config'] = {
+            name: [d for d in definesByConfig[name] if d not in commonDefines]
+            for name in configOrder
+        }
+        # Kept for backward compatibility with callers that expect a
+        # flat list (e.g. displaySummary / the default config's view).
+        self.project['defs'] = definesByConfig.get(
+            self.configName, definesByConfig[configOrder[0]])
 
         if skippedIncs:
             print('Skipped {} include path(s) referencing {} '
@@ -137,7 +167,9 @@ class EWPProject(object):
         print('Project Name:' + self.project['name'])
         print('Project chip:' + self.project['chip'])
         print('Project includes: ' + ' '.join(self.project['incs']))
-        print('Project defines: ' + ' '.join(self.project['defs']))
+        print('Project defines (common): ' + ' '.join(self.project['defines_common']))
+        for name, defs in self.project['defines_by_config'].items():
+            print('Project defines ({}): {}'.format(name, ' '.join(defs)))
         allFiles = [f for group in self.project['groups'] for f in group['files']]
         print('Project srcs: ' + ' '.join(allFiles))
 

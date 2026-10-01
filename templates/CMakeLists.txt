@@ -9,6 +9,11 @@ enable_language(C)
 enable_language(CXX)
 {% endif %}
 
+# Default build type; override with -DCMAKE_BUILD_TYPE=<Debug|Release|...>
+if (NOT CMAKE_BUILD_TYPE)
+    set (CMAKE_BUILD_TYPE "{{ cmake.default_build_type }}" CACHE STRING "Build type" FORCE)
+endif ()
+
 # Reset output path
 set (EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin)
 set (LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/lib)
@@ -89,6 +94,18 @@ target_compile_definitions (${CMAKE_PROJECT_NAME}.elf PRIVATE
     "{{ define }}"
 {% endfor %}
 )
+
+{% for config_name, defines in cmake.defines_by_config.items() %}
+{% if defines %}
+if (CMAKE_BUILD_TYPE STREQUAL "{{ config_name }}")
+    target_compile_definitions (${CMAKE_PROJECT_NAME}.elf PRIVATE
+{% for define in defines %}
+        "{{ define }}"
+{% endfor %}
+    )
+endif ()
+{% endif %}
+{% endfor %}
 
 # Link the library to the target
 target_link_libraries (${CMAKE_PROJECT_NAME}.elf {% for lib in cmake.libs %} {{ lib.name }} {% endfor %})

@@ -182,9 +182,15 @@ class CMake (object):
                   '\'{}\'; the \'flash\' target will not be generated.'.format(family))
         cmake['oocd_target'] = oocd_target
 
-        cmake['defines'] = []
-        for define in self.project['defs']:
-            cmake['defines'].append(define)
+        # Defines common to every build configuration are applied
+        # unconditionally; defines unique to one configuration (e.g.
+        # DEBUG vs. NDEBUG) are applied only when CMAKE_BUILD_TYPE
+        # matches it. Project formats with only one configuration
+        # (e.g. uVision) expose a flat 'defs' list instead and get no
+        # per-config split.
+        cmake['defines'] = list(self.project.get('defines_common', self.project.get('defs', [])))
+        cmake['defines_by_config'] = self.project.get('defines_by_config', {})
+        cmake['default_build_type'] = self.project.get('default_config', 'Debug')
 
         cmake['libs'] = []
 
