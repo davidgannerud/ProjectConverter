@@ -11,22 +11,22 @@ A lot of Embedded Projects use proprietary IDEs and build processes. This make a
 
 ## Prerequisites
 
+This project is setup to run using [uv](https://docs.astral.sh/uv/) or you can pip install needed dependencies:
+
 Install `python3` on your system run:
 ```shell
-pip install Jinja2
+pip install Jinja2 lxml
 ```
 
 ## Usage
 
-Run in output dir.
-
 Convert project from IAR:
 ```
-    python converter.py ewp <path to project root>
+    uv run converter.py ewp <path to project root>
 ```
 Convert project from ARM's KEIL:
 ```
-    python converter.py uvprojx <path to project root>
+    uv run converter.py uvprojx <path to project root>
 ```	
 
 ## Contributing
@@ -40,16 +40,8 @@ We use [SemVer](semver.org) for versioning.
 ## Authors
 
 - Petr Hodina - *Initial work*
+- David Gannerud
 
 ## License
 
 The project is licensed under the [Apache License v2.0](https://www.apache.org/licenses/LICENSE-2.0) - see the [LICENSE.md](LICENSE.md) file for details.
-
-## TODO
-- [ ] Package as python module and publish it
-- [ ] Seperate templates into submodule
-- [ ] Support generation of Makefile
-- [ ] Support additional compilers
-- [ ] Test on MAC OSX 
-- [ ] Arg to specify build directory
-- [ ] Add Tests
