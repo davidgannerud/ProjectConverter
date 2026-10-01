@@ -1,0 +1,10 @@
+[project]
+name = "projectconverter"
+version = "0.2.0"
+description = "Convert IAR EWP to CMake"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "jinja2>=3.1.6",
+    "lxml>=6.1.3",
+]
